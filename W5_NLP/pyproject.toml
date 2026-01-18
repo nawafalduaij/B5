@@ -27,6 +27,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ipykernel>=7.1.0",
+    "jupyter>=1.1.1",
     "nbformat>=5.10.4",
     "pandoc>=2.4",
     "pillow>=12.1.0",
