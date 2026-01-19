@@ -35,13 +35,15 @@
 # - ✅ Build an Agent and use it **as a tool** in another agent
 # - ✅ **Build your first multi-tool agent**
 # - ✅ Explore the different tool types in ADK
+#
+# **⏱️ Expected Reading Time:** 20 Minutes
+#
+# **Note:**
+# This tutorial is designed to be hands-on. We use the **Agent Development Kit (ADK)** because it provides robust abstractions for building production-ready agents.
+# You will notice we switch to using **OpenRouter** as our model provider. This demonstrates ADK's flexibility—it's model-independent!
+# We use `LiteLlm` as the bridge which allows us to connect to hundreds of different LLMs using a standardized interface.
 
 # %% [markdown]
-# ## ‼️ Please Read
-#
-# > ❌ **ℹ️ Note: No submission required!**
-# > This notebook is for your hands-on practice and learning only. You **do not** need to submit it anywhere to complete the course.
-#
 # > ⏸️ **Note:** Avoid using the **Run all** cells command as this can trigger a QPM limit resulting in 429 errors when calling the backing model. Suggested flow is to run each cell in order - one at a time.
 
 # %% [markdown] id="p72CjeQ_eBNW"
@@ -57,24 +59,24 @@
 # To install and use ADK in your Python development environment, run:
 #
 # ```
-# pip install google-adk
+# pip install google-adk litellm
 # ```
 
 # %% [markdown] id="9n9_oE6keBNX"
-# ### 1.2: Configure your Gemini API Key
+# ### 1.2: Configure your OpenRouter API Key
 #
-# This notebook uses the [Gemini API](https://ai.google.dev/gemini-api/docs), which requires an API key.
+# This notebook uses **OpenRouter** to access LLMs. You will need an OpenRouter API key.
 #
 # **1. Get your API key**
 #
-# If you don't have one already, create an [API key in Google AI Studio](https://aistudio.google.com/app/api-keys).
+# Create an account and key at [openrouter.ai](https://openrouter.ai/).
 #
 # **2. Set your API key as an environment variable**
 #
-# Set the `GOOGLE_API_KEY` environment variable with your API key. You can do this by:
+# Set the `OPENROUTER_API_KEY` environment variable.
 #
-# - Setting it in your shell: `export GOOGLE_API_KEY="your-api-key-here"`
-# - Or setting it in your Python code (see the cell below)
+# - Shell: `export OPENROUTER_API_KEY="sk-or-..."`
+# - Python: (see cell below)
 #
 # **3. Authenticate in the notebook**
 #
@@ -84,14 +86,11 @@
 import os
 
 # Set your API key here, or set it as an environment variable before running
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-if not GOOGLE_API_KEY:
-    # If not set as environment variable, you can set it directly here (not recommended for production)
-    # GOOGLE_API_KEY = "your-api-key-here"
-    print("⚠️ Warning: GOOGLE_API_KEY not found. Please set it as an environment variable or in the code above.")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+if not OPENROUTER_API_KEY:
+    print("⚠️ Warning: OPENROUTER_API_KEY not found. Please set it as an environment variable.")
 else:
-    os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
-    print("✅ Setup and authentication complete.")
+    print("✅ Setup complete.")
 
 # %% [markdown] id="uUFXR8XLeBNY"
 # ### 1.3: Import ADK components
@@ -102,7 +101,9 @@ else:
 from google.genai import types
 
 from google.adk.agents import LlmAgent
-from google.adk.models.google_llm import Gemini
+# We use LiteLlm to connect to OpenRouter.
+# This illustrates how ADK is not tied to a single provider.
+from google.adk.models.lite_llm import LiteLlm
 from google.adk.runners import InMemoryRunner
 from google.adk.sessions import InMemorySessionService
 from google.adk.tools import google_search, AgentTool, ToolContext
@@ -296,7 +297,9 @@ print(f"💱 Test: {get_exchange_rate('USD', 'EUR')}")
 # Currency agent with custom function tools
 currency_agent = LlmAgent(
     name="currency_agent",
-    model=Gemini(model="gemini-2.5-flash-lite", retry_options=retry_config),
+    # We use a cost-effective model on OpenRouter. You can change this string to any model supported by OpenRouter!
+    # Format: "openrouter/<provider>/<model-name>"
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     instruction="""You are a smart currency conversion assistant.
 
     For currency conversion requests:
@@ -315,8 +318,8 @@ currency_agent = LlmAgent(
 
 print("✅ Currency agent created with custom function tools")
 print("🔧 Available tools:")
-print("  • get_fee_for_payment_method - Looks up company fee structure")
-print("  • get_exchange_rate - Gets current exchange rates")
+print(f"  • {get_fee_for_payment_method.__name__} - {get_fee_for_payment_method.__doc__.splitlines()[0]}")
+print(f"  • {get_exchange_rate.__name__} - {get_exchange_rate.__doc__.splitlines()[0]}")
 
 # %% id="pUmOpHKceBNZ" outputId="ae3ad5ab-eab5-40ba-acd6-34d8b9e2bf5b"
 # Test the currency agent
@@ -327,118 +330,9 @@ _ = await currency_runner.run_debug(
 
 # %% [markdown] id="knpMAIfdeBNZ"
 # **Excellent!** Our agent now uses custom business logic with structured responses.
-#
-# ## 💻 Section 3: Improving Agent Reliability with Code
-#
-# The agent's instruction says *"calculate the final amount after fees"* but LLMs aren't always reliable at math. They might make calculation errors or use inconsistent formulas.
-#
-# ##### 💡 **Solution:** Let's ask our agent to generate a Python code to do the math, and run it to give us the final result! Code execution is much more reliable than having the LLM try to do math in its head!
-
-# %% [markdown] id="2UD7GgqzeBNZ"
-# <img src="https://storage.googleapis.com/github-repo/kaggle-5days-ai/day2/enhanced-currency-agent.png" width="800" alt="Enhanced Currency Converter Agent">
-
-# %% [markdown] id="82irqcTTeBNZ"
-# ### 3.1 Built-in Code Executor
-#
-# ADK has a built-in Code Executor capable of running code in a sandbox. **Note:** This uses Gemini's Code Execution capability.
-#
-# Let's create a `calculation_agent` which takes in a Python code and uses the `BuiltInCodeExecutor` to run it.
-
-# %%
-calculation_agent = LlmAgent(
-    name="CalculationAgent",
-    model=Gemini(model="gemini-2.5-flash-lite", retry_options=retry_config),
-    instruction="""You are a specialized calculator that ONLY responds with Python code. You are forbidden from providing any text, explanations, or conversational responses.
- 
-     Your task is to take a request for a calculation and translate it into a single block of Python code that calculates the answer.
-     
-     **RULES:**
-    1.  Your output MUST be ONLY a Python code block.
-    2.  Do NOT write any text before or after the code block.
-    3.  The Python code MUST calculate the result.
-    4.  The Python code MUST print the final result to stdout.
-    5.  You are PROHIBITED from performing the calculation yourself. Your only job is to generate the code that will perform the calculation.
-   
-    Failure to follow these rules will result in an error.
-       """,
-    code_executor=BuiltInCodeExecutor(),  # Use the built-in Code Executor Tool. This gives the agent code execution capabilities
-)
-
-# %% [markdown] id="ec3RvyoveBNZ"
-# ### 3.2: Update the Agent's instruction and toolset
-#
-# We'll do two key actions:
-#
-# 1. **Update the `currency_agent`'s instructions to generate Python code**
-# - Original: "*Calculate the final amount after fees*" (vague math instructions)
-# - Enhanced: "*Generate a Python code to calculate the final amount .. and use the `calculation_agent` to run the code and compute final amount*"
-#
-# 2. **Add the `calculation_agent` to the toolset**
-#
-#     ADK lets you use any agent as a tool using `AgentTool`.
-#
-# - Add `AgentTool(agent=calculation_agent)` to the tools list
-# - The specialist agent appears as a callable tool to the root agent
-#
-# Let's see this in action:
-
-# %% id="MwpLqjEmeBNZ" outputId="8eed9464-5a4d-4791-c221-40641ec1a6f7"
-enhanced_currency_agent = LlmAgent(
-    name="enhanced_currency_agent",
-    model=Gemini(model="gemini-2.5-flash-lite", retry_options=retry_config),
-    # Updated instruction
-    instruction="""You are a smart currency conversion assistant. You must strictly follow these steps and use the available tools.
-
-  For any currency conversion request:
-
-   1. Get Transaction Fee: Use the get_fee_for_payment_method() tool to determine the transaction fee.
-   2. Get Exchange Rate: Use the get_exchange_rate() tool to get the currency conversion rate.
-   3. Error Check: After each tool call, you must check the "status" field in the response. If the status is "error", you must stop and clearly explain the issue to the user.
-   4. Calculate Final Amount (CRITICAL): You are strictly prohibited from performing any arithmetic calculations yourself. You must use the calculation_agent tool to generate Python code that calculates the final converted amount. This 
-      code will use the fee information from step 1 and the exchange rate from step 2.
-   5. Provide Detailed Breakdown: In your summary, you must:
-       * State the final converted amount.
-       * Explain how the result was calculated, including:
-           * The fee percentage and the fee amount in the original currency.
-           * The amount remaining after deducting the fee.
-           * The exchange rate applied.
-    """,
-    tools=[
-        get_fee_for_payment_method,
-        get_exchange_rate,
-        AgentTool(agent=calculation_agent),  # Using another agent as a tool!
-    ],
-)
-
-print("✅ Enhanced currency agent created")
-print("🎯 New capability: Delegates calculations to specialist agent")
-print("🔧 Tool types used:")
-print("  • Function Tools (fees, rates)")
-print("  • Agent Tool (calculation specialist)")
-
-# %%
-# Define a runner
-enhanced_runner = InMemoryRunner(agent=enhanced_currency_agent)
-
-# %% id="a3obf58AeBNZ" outputId="8edff423-f7e5-4dff-9c48-ba49ab726c99"
-# Test the enhanced agent
-response = await enhanced_runner.run_debug(
-    "Convert 1,250 USD to INR using a Bank Transfer. Show me the precise calculation."
-)
-
-# %% [markdown] id="lUj4Pi7reBNZ"
-# **Excellent!** Notice what happened:
-#
-# - When the Currency agent calls the `CalculationAgent`, it passes in the generated Python code
-# - The `CalculationAgent` in turn used the `BuiltInCodeExecutor` to run the code and gave us precise calculations instead of LLM guesswork!
-#
-# Now you can inspect the parts of the response that either generated Python code or that contain the Python code results, using the helper function that was defined near the beginning of this notebook:
-
-# %%
-show_python_code_and_result(response)
 
 # %% [markdown] id="NuIzDxfGeBNZ"
-# ### 🤔 3.3: Agent Tools vs Sub-Agents: What's the Difference?
+# ### 🤔 2.3: Agent Tools vs Sub-Agents: What's the Difference?
 #
 # This is a common question! Both involve using multiple agents, but they work very differently:
 #
@@ -457,7 +351,7 @@ show_python_code_and_result(response)
 # **In our currency example:** We want the currency agent to get calculation results and continue working with them, so we use **Agent Tools**, not sub-agents.
 
 # %% [markdown] id="x06SZdbLeBNd"
-# ## 🧰 Section 4: Complete Guide to ADK Tool Types
+# ## 🧰 Section 3: Complete Guide to ADK Tool Types
 #
 # Now that you've seen tools in action, let's understand the complete ADK toolkit:
 #
@@ -484,7 +378,7 @@ show_python_code_and_result(response)
 # - **Examples**: Human-in-the-loop approvals, file processing
 # - **Advantage**: Agents can start tasks and continue with other work while waiting
 #
-# #### **Agent Tools** ✅ (You've used these!)
+# #### **Agent Tools**
 # - **What**: Other agents used as tools
 # - **Examples**: `AgentTool(agent=calculation_agent)`
 # - **Advantage**: Build specialist agents and reuse them across different systems
@@ -510,7 +404,7 @@ show_python_code_and_result(response)
 #
 # **Advantage**: No development time — use immediately with zero setup
 #
-# #### **Gemini Tools** ✅ (You've used these!)
+# #### **Gemini Tools** [needs Gemini API key]
 # - **What**: Tools that leverage Gemini's capabilities
 # - **Examples**: `google_search`, `BuiltInCodeExecutor`
 # - **Advantage**: Reliable, tested tools that work out of the box
@@ -532,12 +426,8 @@ show_python_code_and_result(response)
 # intelligent actions with custom tools. In this notebook, you learned:
 #
 # 1. 🔧 **Function Tools** - Converted Python functions into agent tools
-# 2. 🤖 **Agent Tools** - Created specialist agents and used them as tools
-# 3. 🧰 **Complete Toolkit** - Explored all ADK tool types and when to use them
+# 2. 🧰 **Complete Toolkit** - Explored all ADK tool types and when to use them
 #
-# **ℹ️ Note: No submission required!**
-#
-# This notebook is for your hands-on practice and learning only. You **do not** need to submit it anywhere to complete the course.
 #
 # ### 📚 Learn More
 #
@@ -549,9 +439,3 @@ show_python_code_and_result(response)
 # - [ADK Function Tools](https://google.github.io/adk-docs/tools/function-tools/)
 # - [ADK Plugins Overview](https://google.github.io/adk-docs/plugins/)
 #
-# ### 🎯 Next Steps
-#
-# You've built the foundation of agent tool mastery.
-#
-# Ready for the next challenge? Continue to the next notebook to learn about **tool patterns**!
-

@@ -11,23 +11,22 @@
 # ---
 
 # %% [markdown]
-# # Day 2 - Classifying Embeddings with PyTorch and the Gemini API
+# # Day 2 - Classifying Embeddings with PyTorch and the OpenAI API
 #
 # ## Overview
 #
-# Welcome to the Generative AI Course. In this notebook, you'll learn to use the embeddings produced by the Gemini API to train a model that can classify newsgroup posts into their categories (the newsgroup itself) from the post contents.
+# Welcome to the Generative AI Course. In this notebook, you'll learn to use the embeddings produced by the OpenAI API to train a model that can classify newsgroup posts into their categories (the newsgroup itself) from the post contents.
 #
-# This technique uses the Gemini API's embeddings as input, avoiding the need to train on text input directly, and as a result it is able to perform quite well using relatively few examples.
+# This technique uses the OpenAI API's embeddings as input, avoiding the need to train on text input directly, and as a result it is able to perform quite well using relatively few examples.
 #
 # **Prerequisites**:
-# - You need a Google Cloud Project with the Gemini API enabled.
-# - You need an API key stored in the `GOOGLE_API_KEY` environment variable.
+# - You need an OpenAI API key stored in the `OPENAI_API_KEY` environment variable.
 
 # %% [markdown]
 # ## Setup
 #
 # ```bash
-# pip install -U -q "google-genai" scikit-learn torch tqdm pandas
+# pip install -U -q "openai" scikit-learn torch tqdm pandas
 # ```
 
 # %%
@@ -41,21 +40,20 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.datasets import fetch_20newsgroups
-from google import genai
-from google.genai import types
-from google.api_core import retry
+from openai import OpenAI
 import tqdm
+import time
 
 # %% [markdown]
 # ### Set up your API key
 
 # %%
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
-if not GOOGLE_API_KEY:
-    raise ValueError("Please set the GOOGLE_API_KEY environment variable.")
+if not OPENAI_API_KEY:
+    raise ValueError("Please set the OPENAI_API_KEY environment variable.")
 
-client = genai.Client(api_key=GOOGLE_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # %% [markdown]
 # ## Dataset
@@ -133,24 +131,28 @@ print(df_train.value_counts("Class Name"))
 # %% [markdown]
 # ## Create the embeddings
 #
-# In this section, you will generate embeddings for each piece of text using the Gemini API embeddings endpoint.
+# In this section, you will generate embeddings for each piece of text using the OpenAI API embeddings endpoint.
 #
-# We will use `task_type="classification"` for the training embeddings.
+# OpenAI's text-embedding-3-small model works well for classification tasks.
 
 # %%
-# Define a helper to retry when per-minute quota is reached.
-is_retriable = lambda e: (isinstance(e, genai.errors.APIError) and e.code in {429, 503})
-
-@retry.Retry(predicate=is_retriable, timeout=300.0)
 def embed_fn(text: str) -> list[float]:
-    response = client.models.embed_content(
-        model="models/text-embedding-004",
-        contents=text,
-        config=types.EmbedContentConfig(
-            task_type="classification",
-        ),
-    )
-    return response.embeddings[0].values
+    # Retry logic for rate limits
+    max_retries = 3
+    retry_delay = 1
+    
+    for attempt in range(max_retries):
+        try:
+            response = client.embeddings.create(
+                model="text-embedding-3-small",
+                input=text,
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            if attempt < max_retries - 1 and (hasattr(e, 'status_code') and e.status_code in {429, 503}):
+                time.sleep(retry_delay * (attempt + 1))
+                continue
+            raise
 
 def create_embeddings(df):
     tqdm.tqdm.pandas()

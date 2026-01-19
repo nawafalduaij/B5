@@ -5,8 +5,16 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "google-api-core>=2.29.0",
-    "google-genai>=1.59.0",
+    "chromadb>=1.4.1",
+    "ddgs>=9.10.0",
+    "google-adk>=1.22.1",
+    "litellm>=1.81.0",
+    "markitdown[all,pdf,youtube-transcription]>=0.1.4",
+    "ollama>=0.6.1",
+    "openai>=2.15.0",
+    "python-dotenv>=1.2.1",
+    "requests>=2.32.5",
+    "rich>=14.2.0",
 ]
 
 [dependency-groups]

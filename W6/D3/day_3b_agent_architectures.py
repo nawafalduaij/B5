@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.18.1
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: .venv
 #     language: python
 #     name: python3
 # ---
@@ -28,83 +28,41 @@
 # - ✅ Build your first system using an LLM as a "manager"
 # - ✅ Learn three core workflow patterns (Sequential, Parallel, and Loop) to coordinate your agent teams
 #
-# ## ‼️ Please Read
-#
-# > ❌ **ℹ️ Note: No submission required!**
-# > This notebook is for your hands-on practice and learning only. You **do not** need to submit it anywhere to complete the course.
+# **⏱️ Expected Reading Time:** 25 Minutes
 #
 # > ⏸️ **Note:** Avoid using the **Run all** cells command as this can trigger a QPM limit resulting in 429 errors when calling the backing model. Suggested flow is to run each cell in order - one at a time.
 
 # %% [markdown]
 # ## ⚙️ Section 1: Setup
-#
-# ### 1.1: Install dependencies
-#
-# To install and use ADK in your Python development environment, run:
-#
-# ```
-# pip install google-adk
-# ```
 
 # %% [markdown]
-# ### 1.2: Configure your Gemini API Key
-#
-# This notebook uses the [Gemini API](https://ai.google.dev/gemini-api/docs), which requires authentication.
-#
-# **1. Get your API key**
-#
-# If you don't have one already, create an [API key in Google AI Studio](https://aistudio.google.com/app/api-keys).
-#
-# **2. Set your API key as an environment variable**
-#
-# Set the `GOOGLE_API_KEY` environment variable with your API key. You can do this by:
-#
-# - Setting it in your shell: `export GOOGLE_API_KEY="your-api-key-here"`
-# - Or setting it in your Python code (see the cell below)
-#
-# **3. Authenticate in the notebook**
+# ### 1.1: Configure your OpenRouter API Key
 #
 # Run the cell below to complete authentication.
 
 # %%
 import os
-
 # Set your API key here, or set it as an environment variable before running
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-if not GOOGLE_API_KEY:
-    # If not set as environment variable, you can set it directly here (not recommended for production)
-    # GOOGLE_API_KEY = "your-api-key-here"
-    print("⚠️ Warning: GOOGLE_API_KEY not found. Please set it as an environment variable or in the code above.")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+if not OPENROUTER_API_KEY:
+    print("⚠️ Warning: OPENROUTER_API_KEY not found. Please set it as an environment variable.")
 else:
-    os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
-    print("✅ Gemini API key setup complete.")
+    print("✅ Setup complete.")
 
 # %% [markdown]
-# ### 1.3: Import ADK components
+# ### 1.2: Import ADK components
 #
 # Now, import the specific components you'll need from the Agent Development Kit and the Generative AI library. This keeps your code organized and ensures we have access to the necessary building blocks.
 
 # %%
 from google.adk.agents import Agent, SequentialAgent, ParallelAgent, LoopAgent
-from google.adk.models.google_llm import Gemini
+# Using LiteLlm to connect to DeepSeek via OpenRouter
+from google.adk.models.lite_llm import LiteLlm
 from google.adk.runners import InMemoryRunner
-from google.adk.tools import AgentTool, FunctionTool, google_search
-from google.genai import types
+from google.adk.tools import AgentTool, FunctionTool
+from search_tool import duckduckgo_search
 
 print("✅ ADK components imported successfully.")
-
-# %% [markdown]
-# ### 1.4: Configure Retry Options
-#
-# When working with LLMs, you may encounter transient errors like rate limits or temporary service unavailability. Retry options automatically handle these failures by retrying the request with exponential backoff.
-
-# %%
-retry_config=types.HttpRetryOptions(
-    attempts=5,  # Maximum retry attempts
-    exp_base=7,  # Delay multiplier
-    initial_delay=1,
-    http_status_codes=[429, 500, 503, 504], # Retry on these HTTP errors
-)
 
 # %% [markdown]
 # ---
@@ -156,16 +114,13 @@ retry_config=types.HttpRetryOptions(
 # 2. **Summarizer Agent** - Creates concise summaries from research findings
 
 # %%
-# Research Agent: Its job is to use the google_search tool and present findings.
+# Research Agent: Its job is to use the duckduckgo_search tool and present findings.
 research_agent = Agent(
     name="ResearchAgent",
-    model=Gemini(
-        model="gemini-2.5-flash-lite",
-        retry_options=retry_config
-    ),
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     instruction="""You are a specialized research agent. Your only job is to use the
-    google_search tool to find 2-3 pieces of relevant information on the given topic and present the findings with citations.""",
-    tools=[google_search],
+    DuckDuckGo search tool to find 2-3 pieces of relevant information on the given topic and present the findings with citations.""",
+    tools=[FunctionTool(func=duckduckgo_search)],
     output_key="research_findings",  # The result of this agent will be stored in the session state with this key.
 )
 
@@ -175,10 +130,7 @@ print("✅ research_agent created.")
 # Summarizer Agent: Its job is to summarize the text it receives.
 summarizer_agent = Agent(
     name="SummarizerAgent",
-    model=Gemini(
-        model="gemini-2.5-flash-lite",
-        retry_options=retry_config
-    ),
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     # The instruction is modified to request a bulleted list for a clear output format.
     instruction="""Read the provided research findings: {research_findings}
 Create a concise summary as a bulleted list with 3-5 key points.""",
@@ -196,10 +148,7 @@ print("✅ summarizer_agent created.")
 # Root Coordinator: Orchestrates the workflow by calling the sub-agents as tools.
 root_agent = Agent(
     name="ResearchCoordinator",
-    model=Gemini(
-        model="gemini-2.5-flash-lite",
-        retry_options=retry_config
-    ),
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     # This instruction tells the root agent HOW to use its tools (which are the other agents).
     instruction="""You are a research coordinator. Your goal is to answer the user's query by orchestrating a workflow.
 1. First, you MUST call the `ResearchAgent` tool to find relevant information on the topic provided by the user.
@@ -212,7 +161,7 @@ root_agent = Agent(
 print("✅ root_agent created.")
 
 # %% [markdown]
-# Here we're using `AgentTool` to wrap the sub-agents to make them callable tools for the root agent. We'll explore `AgentTool` in-detail on Day 2.
+# Here we're using `AgentTool` to wrap the sub-agents to make them callable tools for the root agent. We'll explore `AgentTool` in-detail on Day 4.
 #
 # Let's run the agent and ask it about a topic:
 
@@ -276,10 +225,7 @@ response = await runner.run_debug(
 # Outline Agent: Creates the initial blog post outline.
 outline_agent = Agent(
     name="OutlineAgent",
-    model=Gemini(
-        model="gemini-2.5-flash-lite",
-        retry_options=retry_config
-    ),
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     instruction="""Create a blog outline for the given topic with:
     1. A catchy headline
     2. An introduction hook
@@ -294,10 +240,7 @@ print("✅ outline_agent created.")
 # Writer Agent: Writes the full blog post based on the outline from the previous agent.
 writer_agent = Agent(
     name="WriterAgent",
-    model=Gemini(
-        model="gemini-2.5-flash-lite",
-        retry_options=retry_config
-    ),
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     # The `{blog_outline}` placeholder automatically injects the state value from the previous agent's output.
     instruction="""Following this outline strictly: {blog_outline}
     Write a brief, 200 to 300-word blog post with an engaging and informative tone.""",
@@ -310,10 +253,7 @@ print("✅ writer_agent created.")
 # Editor Agent: Edits and polishes the draft from the writer agent.
 editor_agent = Agent(
     name="EditorAgent",
-    model=Gemini(
-        model="gemini-2.5-flash-lite",
-        retry_options=retry_config
-    ),
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     # This agent receives the `{blog_draft}` from the writer agent's output.
     instruction="""Edit this draft: {blog_draft}
     Your task is to polish the text by fixing any grammatical errors, improving the flow and sentence structure, and enhancing overall clarity.""",
@@ -400,13 +340,10 @@ response = await runner.run_debug(
 # Tech Researcher: Focuses on AI and ML trends.
 tech_researcher = Agent(
     name="TechResearcher",
-    model=Gemini(
-        model="gemini-2.5-flash-lite",
-        retry_options=retry_config
-    ),
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     instruction="""Research the latest AI/ML trends. Include 3 key developments,
 the main companies involved, and the potential impact. Keep the report very concise (100 words).""",
-    tools=[google_search],
+    tools=[FunctionTool(func=duckduckgo_search)],
     output_key="tech_research",  # The result of this agent will be stored in the session state with this key.
 )
 
@@ -416,13 +353,10 @@ print("✅ tech_researcher created.")
 # Health Researcher: Focuses on medical breakthroughs.
 health_researcher = Agent(
     name="HealthResearcher",
-    model=Gemini(
-        model="gemini-2.5-flash-lite",
-        retry_options=retry_config
-    ),
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     instruction="""Research recent medical breakthroughs. Include 3 significant advances,
 their practical applications, and estimated timelines. Keep the report concise (100 words).""",
-    tools=[google_search],
+    tools=[FunctionTool(func=duckduckgo_search)],
     output_key="health_research",  # The result will be stored with this key.
 )
 
@@ -432,13 +366,10 @@ print("✅ health_researcher created.")
 # Finance Researcher: Focuses on fintech trends.
 finance_researcher = Agent(
     name="FinanceResearcher",
-    model=Gemini(
-        model="gemini-2.5-flash-lite",
-        retry_options=retry_config
-    ),
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     instruction="""Research current fintech trends. Include 3 key trends,
 their market implications, and the future outlook. Keep the report concise (100 words).""",
-    tools=[google_search],
+    tools=[FunctionTool(func=duckduckgo_search)],
     output_key="finance_research",  # The result will be stored with this key.
 )
 
@@ -448,13 +379,10 @@ print("✅ finance_researcher created.")
 # The AggregatorAgent runs *after* the parallel step to synthesize the results.
 aggregator_agent = Agent(
     name="AggregatorAgent",
-    model=Gemini(
-        model="gemini-2.5-flash-lite",
-        retry_options=retry_config
-    ),
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     # It uses placeholders to inject the outputs from the parallel agents, which are now in the session state.
     instruction="""Combine these three research findings into a single executive summary:
-
+    
     **Technology Trends:**
     {tech_research}
     
@@ -552,10 +480,7 @@ response = await runner.run_debug(
 # This agent runs ONCE at the beginning to create the first draft.
 initial_writer_agent = Agent(
     name="InitialWriterAgent",
-    model=Gemini(
-        model="gemini-2.5-flash-lite",
-        retry_options=retry_config
-    ),
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     instruction="""Based on the user's prompt, write the first draft of a short story (around 100-150 words).
     Output only the story text, with no introduction or explanation.""",
     output_key="current_story",  # Stores the first draft in the state.
@@ -567,10 +492,7 @@ print("✅ initial_writer_agent created.")
 # This agent's only job is to provide feedback or the approval signal. It has no tools.
 critic_agent = Agent(
     name="CriticAgent",
-    model=Gemini(
-        model="gemini-2.5-flash-lite",
-        retry_options=retry_config
-    ),
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     instruction="""You are a constructive story critic. Review the story provided below.
     Story: {current_story}
     
@@ -613,10 +535,7 @@ print("✅ exit_loop function created.")
 # This agent refines the story based on critique OR calls the exit_loop function.
 refiner_agent = Agent(
     name="RefinerAgent",
-    model=Gemini(
-        model="gemini-2.5-flash-lite",
-        retry_options=retry_config
-    ),
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     instruction="""You are a story refiner. You have a story draft and critique.
     
     Story Draft: {current_story}
@@ -718,10 +637,6 @@ response = await runner.run_debug(
 #
 # You used `SequentialAgent`, `ParallelAgent`, and `LoopAgent` to create deterministic workflows, and you even used an LLM as a 'manager' to make dynamic decisions. You also mastered the "plumbing" by using `output_key` to pass state between agents and make them collaborative.
 #
-# **ℹ️ Note: No submission required!**
-#
-# This notebook is for your hands-on practice and learning only. You **do not** need to submit it anywhere to complete the course.
-#
 # ### 📚 Learn More
 #
 # Refer to the following documentation to learn more:
@@ -732,7 +647,3 @@ response = await runner.run_debug(
 # - [Loop Agents in ADK](https://google.github.io/adk-docs/agents/workflow-agents/loop-agents/)
 # - [Custom Agents in ADK](https://google.github.io/adk-docs/agents/custom-agents/)
 #
-# ### 🎯 Next Steps
-#
-# Ready for the next challenge? Stay tuned for Day 2 notebooks where we'll learn how to create **Custom Functions, use MCP Tools** and manage **Long-Running operations!**
-

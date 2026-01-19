@@ -26,6 +26,13 @@
 # - ✅ **Implement long-running operations** that can pause agent execution for external input
 # - ✅ **Build resumable workflows** that maintain state across conversation breaks
 # - ✅ Understand when and how to use these patterns
+#
+# **⏱️ Expected Reading Time:** 25 Minutes
+#
+# **Note:**
+# In this notebook, we continue using **ADK** and **OpenRouter** (via `LiteLlm`).
+# We will explore advanced patterns like **Model Context Protocol (MCP)** which allows you to connect agents to external data and tools without writing custom integration code.
+# We also tackle **Long-Running Operations**, a critical pattern for real-world agents that need human approval or wait for long processes.
 
 # %% [markdown]
 # ## ‼️ Please Read
@@ -49,38 +56,14 @@
 # pip install google-adk
 # ```
 
-# %% [markdown] id="mkYnp2HrpwG9"
-# ### 1.2: Configure your Gemini API Key
-#
-# This notebook uses the [Gemini API](https://ai.google.dev/gemini-api/docs), which requires an API key.
-#
-# **1. Get your API key**
-#
-# If you don't have one already, create an [API key in Google AI Studio](https://aistudio.google.com/app/api-keys).
-#
-# **2. Set your API key as an environment variable**
-#
-# Set the `GOOGLE_API_KEY` environment variable with your API key. You can do this by:
-#
-# - Setting it in your shell: `export GOOGLE_API_KEY="your-api-key-here"`
-# - Or setting it in your Python code (see the cell below)
-#
-# **3. Authenticate in the notebook**
-#
-# Run the cell below to complete authentication:
-
-# %% id="X4ge5O5LpwG9" outputId="e979fed9-ec85-4d7d-da4b-4b92464e880f"
+# %%
 import os
 
-# Set your API key here, or set it as an environment variable before running
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-if not GOOGLE_API_KEY:
-    # If not set as environment variable, you can set it directly here (not recommended for production)
-    # GOOGLE_API_KEY = "your-api-key-here"
-    print("⚠️ Warning: GOOGLE_API_KEY not found. Please set it as an environment variable or in the code above.")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+if not OPENROUTER_API_KEY:
+    print("⚠️ Warning: OPENROUTER_API_KEY not found. Please set it as an environment variable.")
 else:
-    os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
-    print("✅ Setup and authentication complete.")
+    print("✅ Setup complete.")
 
 # %% [markdown] id="KfKu1N7LpwG-"
 # ### 1.3: Import ADK components
@@ -92,7 +75,8 @@ import uuid
 from google.genai import types
 
 from google.adk.agents import LlmAgent
-from google.adk.models.google_llm import Gemini
+# Using LiteLlm for OpenRouter
+from google.adk.models.lite_llm import LiteLlm
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 
@@ -226,7 +210,8 @@ print("✅ MCP Tool created")
 # %%
 # Create image agent with MCP integration
 image_agent = LlmAgent(
-    model=Gemini(model="gemini-2.5-flash-lite", retry_options=retry_config),
+    # Connect to OpenRouter
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     name="image_agent",
     instruction="Use the MCP Tool to generate images for user queries",
     tools=[mcp_image_server],
@@ -246,6 +231,7 @@ runner = InMemoryRunner(agent=image_agent)
 # Ask the agent to generate an image. Watch it use the MCP tool:
 
 # %%
+# NOTE: this kept spinning forever. I don't know why.
 response = await runner.run_debug("Provide a sample tiny image", verbose=True)
 
 # %% [markdown]
@@ -444,7 +430,7 @@ print("✅ Long-running functions created!")
 # Create shipping agent with pausable tool
 shipping_agent = LlmAgent(
     name="shipping_agent",
-    model=Gemini(model="gemini-2.5-flash-lite", retry_options=retry_config),
+    model=LiteLlm(model="openrouter/deepseek/deepseek-chat"),
     instruction="""You are a shipping coordinator assistant.
   
   When users request to ship containers:
@@ -521,7 +507,7 @@ print("✅ Runner created!")
 # %% [markdown]
 # ## 🏗️ Section 4: Building the Workflow
 #
-# ‼️ **Important:** The workflow code uses ADK concepts like Sessions, Runners, and Events. **We'll cover what you need to know for long-running operations** in this notebook. For deeper understanding, we will cover these topics in Day 3, or you can check out the [ADK docs](https://google.github.io/adk-docs/runtime/) and this [video](https://www.youtube.com/watch?v=44C8u0CDtSo&list=PLOU2XLYxmsIIAPgM8FmtEcFTXLLzmh4DK&index=2&t=1s).
+# ‼️ **Important:** The workflow code uses ADK concepts like Sessions, Runners, and Events. **We'll cover what you need to know for long-running operations** in this notebook. For deeper understanding, you can check out the [ADK docs](https://google.github.io/adk-docs/runtime/) and this [video](https://www.youtube.com/watch?v=44C8u0CDtSo&list=PLOU2XLYxmsIIAPgM8FmtEcFTXLLzmh4DK&index=2&t=1s).
 
 # %% [markdown]
 # ### 4.1: ⚠️ The Critical Part - Handling Events in Your Workflow
@@ -600,7 +586,7 @@ def print_agent_response(events):
 # - Wraps it in a `Content` object to send back to the agent
 
 # %%
-def create_approval_response(approval_info, approved):
+def create_approval_response(approval_info: dict, approved: bool) -> types.Content:
     """Create approval response message."""
     confirmation_response = types.FunctionResponse(
         id=approval_info["approval_id"],
@@ -822,10 +808,6 @@ await run_shipping_workflow("Ship 8 containers to Los Angeles", auto_approve=Fal
 #
 # You've successfully learned how to build agents that handle complex, real-world workflows integrating external systems and spanning time.
 #
-# **ℹ️ Note: No submission required!**
-#
-# This notebook is for your hands-on practice and learning only. You **do not** need to submit it anywhere to complete the course.
-#
 # ### 📚 Learn More
 #
 # - [ADK Documentation](https://google.github.io/adk-docs/)
@@ -833,13 +815,4 @@ await run_shipping_workflow("Ship 8 containers to Los Angeles", auto_approve=Fal
 # - [Long-Running Operations Guide](https://google.github.io/adk-docs/tools/function-tools/)
 # - [Model Context Protocol Specification](https://spec.modelcontextprotocol.io/)
 # - [The `App` and `Runner`](https://google.github.io/adk-docs/runtime/)
-#
-# ### 🎯 Next Steps
-#
-# You've built the foundation for production-ready agent systems. Ready for the next challenge?
-#
-# Continue to **Day 3** to learn about **State and Memory Management**!
-
-# %% [markdown]
-# ---
 #

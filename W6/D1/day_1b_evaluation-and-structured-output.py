@@ -13,7 +13,7 @@
 # %% [markdown]
 # # Day 1b - Evaluation and Structured Output
 #
-# This tutorial builds on the prompting techniques from `day-1a-prompting.py` and focuses on evaluating LLM outputs and using structured output formats.
+# This tutorial builds on the prompting techniques from `day-1a-prompting.py` and focuses on evaluating LLM outputs and using structured output formats using OpenRouter AI.
 #
 # ## Learning Objectives
 #
@@ -28,7 +28,7 @@
 # Before starting, make sure you have:
 # - Completed `day-1a-prompting.py` (recommended but not required)
 # - Completed the setup instructions in `SETUP.md`
-# - Obtained a Gemini API key from [AI Studio](https://aistudio.google.com/app/api-keys)
+# - Obtained an OpenRouter API key from [OpenRouter](https://openrouter.ai/keys)
 # - Installed the required dependencies (see `SETUP.md`)
 
 # %% [markdown]
@@ -38,41 +38,45 @@
 # ### Import the SDK and Helpers
 
 # %%
-from google import genai
-from google.genai import types
-from IPython.display import HTML, Markdown, display
-from google.api_core import retry
+from openai import OpenAI
+from IPython.display import Markdown, display
+import os
 
 # %% [markdown]
 # ### Set Up Retry Helper
 #
 # This allows you to run all cells without worrying about per-minute quota limits.
 # The retry helper will automatically retry requests that fail due to rate limiting (429) or service unavailability (503).
+# Note: OpenAI SDK has built-in retry logic, but you can add custom retry handling if needed.
 
 # %%
-is_retriable = lambda e: (isinstance(e, genai.errors.APIError) and e.code in {429, 503})
-
-genai.models.Models.generate_content = retry.Retry(
-    predicate=is_retriable)(genai.models.Models.generate_content)
+# OpenAI SDK has built-in retry logic for rate limits and service errors
 
 # %% [markdown]
 # ### Initialize the Client
 #
-# The Gemini API uses a `Client` object to make requests.
-# The client handles authentication and lets you control which backend to use (Gemini API or Vertex AI).
-#
-# **Note:** Make sure you have set up your API key according to the instructions in `SETUP.md`.
+# OpenRouter provides a unified API that gives you access to hundreds of AI models through a single endpoint.
+# We use the OpenAI SDK with OpenRouter's base URL for compatibility.
 
 # %%
-# Initialize the client with your API key
-# Replace with your actual API key or use environment variable
-import os
-
-api_key = os.getenv("GOOGLE_API_KEY")
+# Get API key from environment variable or use the commented line for Colab
+# For Colab: import google.colab.userdata; api_key = google.colab.userdata.get('OPENROUTER_API_KEY')
+api_key = os.getenv('OPENROUTER_API_KEY')
 if not api_key:
-    raise ValueError("Please set GOOGLE_API_KEY environment variable. See SETUP.md for instructions.")
+    raise ValueError("Please set OPENROUTER_API_KEY environment variable. Get your key from https://openrouter.ai/keys")
 
-client = genai.Client(api_key=api_key)
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=api_key,
+)
+
+# Default model to use
+# You can use any model available on OpenRouter.
+# Check https://openrouter.ai/models for available models.
+DEFAULT_MODEL = "deepseek/deepseek-chat"
+
+# %% [markdown]
+# **Note:** You can use any model available on OpenRouter. Check https://openrouter.ai/models for available models.
 
 # %% [markdown]
 # ## Part 1: Evaluation and Structured Output
@@ -84,39 +88,105 @@ client = genai.Client(api_key=api_key)
 # %% [markdown]
 # ### Document Summarization Example
 #
-# For this evaluation example, we'll use a document summarization task. First, let's download a sample document and upload it to the Gemini API.
-
-# %%
-import urllib.request
-
-# Download a sample PDF (you can replace this with your own document)
-pdf_url = "https://storage.googleapis.com/cloud-samples-data/generative-ai/pdf/2403.05530.pdf"
-pdf_path = "gemini_technical_report.pdf"
-
-urllib.request.urlretrieve(pdf_url, pdf_path)
-
-document_file = client.files.upload(file=pdf_path)
+# For this evaluation example, we'll use a document summarization task.
+# First, let's download a sample document and upload it to the Gemini API.
+#
+# Note: OpenRouter doesn't support file uploads directly like Gemini.
+# For document processing, you would need to:
+# 1. Extract text from the PDF (using libraries like PyPDF2 or pdfplumber)
+# 2. Include the text in the prompt, or
+# 3. Use a model that supports vision/document understanding with base64 encoding
+# For this example, we'll read the PDF text and include it in prompts
 
 # %% [markdown]
 # ### Summarize a Document
 
 # %%
-request = 'Tell me about the training process used here.'
+def answer_question(document: str, question: str) -> str:
+    """Execute the question on the document."""
+    # Note: For simplicity, we'll use a placeholder approach.
+    # In practice, you'd extract text from the PDF and include it in the prompt.
+    # For this example, we'll simulate document context.
+    prompt = (
+        "Based on the following document context, answer the question."
+        f"\nDocument: {document}"
+        f"\nQuestion: {question}"
+        "\nAnswer:"
+    )
 
-def summarise_doc(request: str) -> str:
-    """Execute the request on the uploaded document."""
-    # Set the temperature low to stabilize the output
-    config = types.GenerateContentConfig(temperature=0.0)
-    response = client.models.generate_content(
-        model='gemini-2.5-flash',
-        config=config,
-        contents=[request, document_file],
+    response = client.chat.completions.create(
+        model=DEFAULT_MODEL,
+        max_tokens=250,
+        messages=[
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.0,
     )
     
-    return response.text
+    return response.choices[0].message.content
 
-summary = summarise_doc(request)
-Markdown(summary)
+
+doc = (
+    "Renewable Energy Policy Framework 2024-2030\n"
+    "Executive Summary\n"
+    "This comprehensive policy document outlines the national strategy for transitioning to renewable energy sources over the next decade. "
+    "The framework addresses solar, wind, hydroelectric, and geothermal energy initiatives, with specific targets and implementation timelines.\n\n"
+    "Chapter 1: Solar Energy Initiatives\n"
+    "The solar energy program aims to install 50 gigawatts of photovoltaic capacity by 2030. "
+    "Key initiatives include rooftop solar subsidies for residential properties, large-scale solar farms in desert regions, "
+    "and integration with smart grid technologies. The program includes tax incentives for commercial installations and "
+    "streamlined permitting processes for solar projects exceeding 1 megawatt capacity.\n\n"
+    "Chapter 2: Wind Energy Development\n"
+    "Wind energy targets include 30 gigawatts of onshore and offshore wind capacity. Priority regions have been identified "
+    "based on wind speed data collected over the past five years. Offshore wind farms will be developed in three phases, "
+    "with the first phase expected to generate 5 gigawatts by 2026. Onshore projects will focus on rural areas with minimal "
+    "environmental impact, requiring environmental impact assessments before approval.\n\n"
+    "Chapter 3: Hydroelectric Power Expansion\n"
+    "Existing hydroelectric facilities will be upgraded to increase efficiency by 15%. New small-scale hydroelectric projects "
+    "will be developed in mountainous regions, with a target of 10 gigawatts additional capacity. These projects must comply "
+    "with strict environmental regulations to protect aquatic ecosystems and fish migration patterns.\n\n"
+    "Chapter 4: Geothermal Energy Exploration\n"
+    "Geothermal energy represents an underutilized resource with significant potential. The policy allocates $2 billion for "
+    "geothermal exploration and development over the next six years. Initial focus areas include regions with known geothermal "
+    "activity, where drilling operations will assess resource viability. Successful projects will receive government funding "
+    "covering up to 40% of development costs.\n\n"
+    "Chapter 5: Grid Modernization and Storage\n"
+    "Modernizing the electrical grid is essential for integrating renewable sources. The policy mandates smart grid upgrades "
+    "in all major metropolitan areas by 2028. Battery storage systems will be deployed at renewable energy sites to address "
+    "intermittency issues. The target is 20 gigawatt-hours of storage capacity, utilizing both lithium-ion and emerging "
+    "technologies like flow batteries and compressed air energy storage.\n\n"
+    "Chapter 6: Economic Incentives and Funding\n"
+    "The government will provide $50 billion in funding through various mechanisms: direct grants, low-interest loans, tax credits, "
+    "and public-private partnerships. Small businesses and residential customers can access rebates covering 30% of installation "
+    "costs. Large-scale projects may qualify for accelerated depreciation schedules and reduced corporate tax rates.\n\n"
+    "Chapter 7: Workforce Development\n"
+    "Training programs will be established to develop a skilled workforce for the renewable energy sector. Technical colleges "
+    "will receive funding to expand renewable energy curricula. Apprenticeship programs will connect 10,000 workers with "
+    "renewable energy companies over the next five years. Certification programs will be standardized across all regions.\n\n"
+    "Chapter 8: Environmental Impact and Regulations\n"
+    "All renewable energy projects must undergo comprehensive environmental impact assessments. Projects affecting protected "
+    "wildlife habitats require additional mitigation measures. The policy establishes a carbon offset program where renewable "
+    "energy generation can be traded. Strict monitoring and reporting requirements ensure compliance with environmental standards.\n\n"
+    "Chapter 9: International Cooperation\n"
+    "The framework includes provisions for international partnerships and technology transfer. Bilateral agreements with leading "
+    "renewable energy nations will facilitate knowledge sharing and joint research initiatives. The country will participate in "
+    "global climate initiatives and contribute to international renewable energy standards development.\n\n"
+    "Chapter 10: Implementation Timeline and Milestones\n"
+    "Phase 1 (2024-2026): Foundation and pilot projects. Establish regulatory framework, begin large-scale solar installations, "
+    "initiate wind farm development, and launch workforce training programs.\n"
+    "Phase 2 (2027-2028): Scaling operations. Complete 60% of solar targets, operationalize first offshore wind farms, "
+    "deploy smart grid infrastructure, and expand storage capacity.\n"
+    "Phase 3 (2029-2030): Full deployment and optimization. Achieve all capacity targets, complete grid modernization, "
+    "establish international partnerships, and evaluate program effectiveness for future planning.\n\n"
+    "Conclusion\n"
+    "This renewable energy policy framework represents a comprehensive approach to transitioning to sustainable energy sources. "
+    "Success requires coordination between government agencies, private sector investment, technological innovation, and public "
+    "support. Regular reviews and adjustments will ensure the policy remains effective and responsive to changing circumstances."
+)
+
+question = 'What are the main renewable energy sources covered in this policy, and what are the capacity targets for each?'
+answer = answer_question(document=doc, question=question)
+Markdown(answer)
 
 # %% [markdown]
 # ### Define an Evaluator
@@ -133,78 +203,106 @@ Markdown(summary)
 # %%
 import enum
 
-# Define the evaluation prompt
-SUMMARY_PROMPT = """\
+# Define a structured enum class to capture the evaluation result for QA
+class QARating(enum.Enum):
+    VERY_GOOD = '5'   # Very good answer: fully correct, fully grounded, fully relevant, clear, and complete
+    GOOD = '4'        # Good answer: nearly perfect, minor flaws
+    OK = '3'          # Ok answer: somewhat correct or relevant, possibly incomplete or unclear
+    BAD = '2'         # Bad answer: partially or mostly incorrect or missing, problematic grounding
+    VERY_BAD = '1'    # Very bad: entirely wrong, hallucinated, or off-topic
+
+# Adapted QA evaluation prompt
+QA_EVAL_PROMPT = """\
 # Instruction
-You are an expert evaluator. Your task is to evaluate the quality of the responses generated by AI models.
-We will provide you with the user input and an AI-generated response.
-You should first read the user input carefully for analyzing the task, and then evaluate the quality of the response based on the Criteria provided in the Evaluation section below.
-You will assign the response a rating following the Rating Rubric and Evaluation Steps. Give step-by-step explanations for your rating, and only choose ratings from the Rating Rubric.
+You are an expert evaluator. Your task is to evaluate the quality of answers to questions, given a context.
+We will provide you with a question, a reference/context (if given), and an AI-generated answer.
+You should first consider the question and context, then evaluate the answer based on the Criteria in the Evaluation section below.
+Assign a rating following the Rating Rubric and Evaluation Steps. Give step-by-step explanations for your rating, and only choose ratings from the Rating Rubric.
 
 # Evaluation
 ## Metric Definition
-You will be assessing summarization quality, which measures the overall ability to summarize text. Pay special attention to length constraints, such as in X words or in Y sentences. The instruction for performing a summarization task and the context to be summarized are provided in the user prompt. The response should be shorter than the text in the context. The response should not contain information that is not present in the context.
+You will be assessing question answering quality, measuring the model's ability to provide accurate, complete, grounded, and well-communicated answers. The answer should be based only on the provided context (if any) and should directly respond to the question.
 
 ## Criteria
-Instruction following: The response demonstrates a clear understanding of the summarization task instructions, satisfying all of the instruction's requirements.
-Groundedness: The response contains information included only in the context. The response does not reference any outside information.
-Conciseness: The response summarizes the relevant details in the original text without a significant loss in key information without being too verbose or terse.
-Fluency: The response is well-organized and easy to read.
+Instruction following: The answer directly and fully addresses the question asked, following any stated instructions (e.g. length requirement, citation, detail).
+Groundedness: The answer is based solely on the provided context or reference (if any); it does not make claims not in the context.
+Correctness: The answer is factually accurate as far as can be determined from the context.
+Completeness & Relevance: The answer covers all key components of the question without excessive or irrelevant information.
+Clarity: The answer is easy to read and understand.
 
 ## Rating Rubric
-5: (Very good). The summary follows instructions, is grounded, is concise, and fluent.
-4: (Good). The summary follows instructions, is grounded, concise, and fluent.
-3: (Ok). The summary mostly follows instructions, is grounded, but is not very concise and is not fluent.
-2: (Bad). The summary is grounded, but does not follow the instructions.
-1: (Very bad). The summary is not grounded.
+5: (Very good). The answer follows instructions, is grounded, correct, complete, and clear.
+4: (Good). The answer is nearly perfect minor flaw(s), fully or mostly satisfies all requirements.
+3: (Ok). The answer is partially correct/good, but is incomplete or unclear.
+2: (Bad). The answer is substantially incomplete or incorrect, or has major grounding issues.
+1: (Very bad). The answer misses the point, is ungrounded, or entirely incorrect.
 
 ## Evaluation Steps
-STEP 1: Assess the response in aspects of instruction following, groundedness, conciseness, and verbosity according to the criteria.
-STEP 2: Score based on the rubric.
+STEP 1: Assess the answer by the criteria: instruction following, groundedness, correctness, completeness, and clarity.
+STEP 2: Assign a rating based on the rubric.
 
-# User Inputs and AI-generated Response
-## User Inputs
+# Inputs and AI-generated Answer
+## Question
+{question}
 
-### Prompt
-{prompt}
+## Context (if any)
+{context}
 
-## AI-generated Response
-{response}
+## AI-generated Answer
+{answer}
 """
 
-# Define a structured enum class to capture the result
-class SummaryRating(enum.Enum):
-    VERY_GOOD = '5'
-    GOOD = '4'
-    OK = '3'
-    BAD = '2'
-    VERY_BAD = '1'
+def eval_qa(question, answer, context=""):
+    """Evaluate a QA answer given the input question and an optional context."""
+    messages = []
+    messages.append({
+        "role": "user",
+        "content": QA_EVAL_PROMPT.format(
+            question=question,
+            context=context if context else "<No context provided. Answer must be generic or rely only on the question.>",
+            answer=answer
+        )
+    })
+    response = client.chat.completions.create(
+        model=DEFAULT_MODEL,
+        messages=messages,
+    )
+    verbose_eval = response.choices[0].message.content
+    messages.append({
+        "role": "assistant",
+        "content": verbose_eval
+    })
 
-def eval_summary(prompt, ai_response):
-    """Evaluate the generated summary against the prompt used."""
-    
-    chat = client.chats.create(model='gemini-2.5-flash')
-    
-    # Generate the full text response
-    response = chat.send_message(
-        message=SUMMARY_PROMPT.format(prompt=prompt, response=ai_response)
+    # Structure conversion request
+    messages.append({
+        "role": "user",
+        "content": "Convert the final score to one of: 5, 4, 3, 2, or 1. Respond with only the number."
+    })
+    response = client.chat.completions.create(
+        model=DEFAULT_MODEL,
+        messages=messages,
+        temperature=0.0,
+        max_tokens=5,
     )
-    verbose_eval = response.text
-    
-    # Coerce into the desired structure
-    structured_output_config = types.GenerateContentConfig(
-        response_mime_type="text/x.enum",
-        response_schema=SummaryRating,
-    )
-    response = chat.send_message(
-        message="Convert the final score.",
-        config=structured_output_config,
-    )
-    structured_eval = response.parsed
-    
+    score_text = response.choices[0].message.content.strip()
+    try:
+        structured_eval = QARating(score_text)
+    except ValueError:
+        import re
+        match = re.search(r'\b([1-5])\b', score_text)
+        if match:
+            structured_eval = QARating(match.group(1))
+        else:
+            structured_eval = QARating.OK  # Default fallback
+
     return verbose_eval, structured_eval
 
-text_eval, struct_eval = eval_summary(prompt=[request, document_file], ai_response=summary)
+# Usage example for QA:
+text_eval, struct_eval = eval_qa(
+    question=question,   # The question about renewable energy
+    answer=answer,       # The model's generated answer
+    context=doc          # The full document context
+)
 Markdown(text_eval)
 
 # %%
@@ -237,26 +335,42 @@ guidance_options = {
 }
 
 questions = [
-    "How does the model perform on code tasks?",
-    "How many layers does it have?",
+    "What is the total funding allocated for renewable energy initiatives?",
+    "What are the three implementation phases and their timeframes?",
 ]
 
 @functools.cache
-def answer_question(question: str, guidance: str = '') -> str:
-    """Generate an answer to the question using the uploaded document and guidance."""
-    config = types.GenerateContentConfig(
-        temperature=0.0,
-        system_instruction=guidance,
-    )
-    response = client.models.generate_content(
-        model='gemini-2.5-flash',
-        config=config,
-        contents=[question, document_file],
+def answer_question(question: str, guidance: str = '', document_context: str = '') -> str:
+    """Generate an answer to the question using the document and guidance."""
+    messages = []
+    if guidance:
+        messages.append({
+            "role": "system",
+            "content": guidance
+        })
+    
+    # Use the actual document context
+    prompt = f"""Based on the following document context, answer the question.
+    
+Document: {document_context if document_context else doc}
+Question: {question}
+
+Answer:"""
+    
+    messages.append({
+        "role": "user",
+        "content": prompt
+    })
+    
+    response = client.chat.completions.create(
+        model=DEFAULT_MODEL,
+        messages=messages,
+        temperature=0.0
     )
     
-    return response.text
+    return response.choices[0].message.content
 
-answer = answer_question(questions[0], terse_guidance)
+answer = answer_question(questions[0], terse_guidance, document_context=doc)
 Markdown(answer)
 
 # %% [markdown]
@@ -312,24 +426,47 @@ class AnswerRating(enum.Enum):
 @functools.cache
 def eval_answer(prompt, ai_response, n=1):
     """Evaluate the generated answer against the prompt/question used."""
-    chat = client.chats.create(model='gemini-2.5-flash')
+    messages = []
     
     # Generate the full text response
-    response = chat.send_message(
-        message=QA_PROMPT.format(prompt=[prompt, document_file], response=ai_response)
+    messages.append({
+        "role": "user",
+        "content": QA_PROMPT.format(prompt=prompt, response=ai_response)
+    })
+    response = client.chat.completions.create(
+        model=DEFAULT_MODEL,
+        messages=messages
     )
-    verbose_eval = response.text
+    verbose_eval = response.choices[0].message.content
+    messages.append({
+        "role": "assistant",
+        "content": verbose_eval
+    })
     
     # Coerce into the desired structure
-    structured_output_config = types.GenerateContentConfig(
-        response_mime_type="text/x.enum",
-        response_schema=AnswerRating,
+    messages.append({
+        "role": "user",
+        "content": "Convert the final score to one of: 5, 4, 3, 2, or 1. Respond with only the number."
+    })
+    response = client.chat.completions.create(
+        model=DEFAULT_MODEL,
+        messages=messages,
+        temperature=0.0,
+        max_tokens=5
     )
-    response = chat.send_message(
-        message="Convert the final score.",
-        config=structured_output_config,
-    )
-    structured_eval = response.parsed
+    
+    # Parse the score
+    score_text = response.choices[0].message.content.strip()
+    try:
+        structured_eval = AnswerRating(score_text)
+    except ValueError:
+        # Fallback: try to extract number from text
+        import re
+        match = re.search(r'\b([1-5])\b', score_text)
+        if match:
+            structured_eval = AnswerRating(match.group(1))
+        else:
+            structured_eval = AnswerRating.OK  # Default fallback
     
     return verbose_eval, structured_eval
 
@@ -355,7 +492,7 @@ for question in questions:
         
         for n in range(NUM_ITERATIONS):
             # Generate a response
-            answer = answer_question(question, guide_prompt)
+            answer = answer_question(question, guide_prompt, document_context=doc)
             
             # Evaluate the response (note that the guidance prompt is not passed)
             written_eval, struct_eval = eval_answer(question, answer, n)
@@ -433,33 +570,58 @@ class AnswerComparison(enum.Enum):
 def eval_pairwise(prompt, response_a, response_b, n=1):
     """Determine the better of two answers to the same prompt."""
     
-    chat = client.chats.create(model='gemini-2.5-flash')
+    messages = []
     
     # Generate the full text response
-    response = chat.send_message(
-        message=QA_PAIRWISE_PROMPT.format(
-            prompt=[prompt, document_file],
+    messages.append({
+        "role": "user",
+        "content": QA_PAIRWISE_PROMPT.format(
+            prompt=prompt,
             baseline_model_response=response_a,
             response=response_b)
+    })
+    response = client.chat.completions.create(
+        model=DEFAULT_MODEL,
+        messages=messages
     )
-    verbose_eval = response.text
+    verbose_eval = response.choices[0].message.content
+    messages.append({
+        "role": "assistant",
+        "content": verbose_eval
+    })
     
     # Coerce into the desired structure
-    structured_output_config = types.GenerateContentConfig(
-        response_mime_type="text/x.enum",
-        response_schema=AnswerComparison,
+    messages.append({
+        "role": "user",
+        "content": "Convert the final preference to one of: A, SAME, or B. Respond with only the choice."
+    })
+    response = client.chat.completions.create(
+        model=DEFAULT_MODEL,
+        messages=messages,
+        temperature=0.0,
+        max_tokens=10
     )
-    response = chat.send_message(
-        message="Convert the final score.",
-        config=structured_output_config,
-    )
-    structured_eval = response.parsed
+    
+    # Parse the comparison
+    choice_text = response.choices[0].message.content.strip().upper()
+    try:
+        structured_eval = AnswerComparison(choice_text)
+    except ValueError:
+        # Fallback: try to match
+        if "A" in choice_text and "B" not in choice_text:
+            structured_eval = AnswerComparison.A
+        elif "B" in choice_text and "A" not in choice_text:
+            structured_eval = AnswerComparison.B
+        elif "SAME" in choice_text:
+            structured_eval = AnswerComparison.SAME
+        else:
+            structured_eval = AnswerComparison.SAME  # Default fallback
     
     return verbose_eval, structured_eval
 
 question = questions[0]
-answer_a = answer_question(question, terse_guidance)
-answer_b = answer_question(question, cited_guidance)
+answer_a = answer_question(question, terse_guidance, document_context=doc)
+answer_b = answer_question(question, cited_guidance, document_context=doc)
 
 text_eval, struct_eval = eval_pairwise(
     prompt=question,
@@ -498,18 +660,3 @@ print(struct_eval)
 # 2. **Structured Output**: How to use structured output formats (enums) for programmatic evaluation
 # 3. **Evaluation Prompts**: How to design effective evaluation prompts with clear criteria and rubrics
 # 4. **Best Practices**: Understanding limitations and improving evaluation confidence
-#
-# ## Next Steps
-#
-# - Review `day-1a-prompting.py` if you haven't already, to understand the prompting techniques that generate the outputs you're evaluating
-# - Explore the [Gemini API documentation](https://ai.google.dev/gemini-api/docs) for more advanced features
-# - Check out the [Gemini API cookbook](https://github.com/google-gemini/cookbook) for more examples
-# - Try building your own evaluation system for a specific use case
-
-# %% [markdown]
-# ## References
-#
-# - [Gemini API Documentation](https://ai.google.dev/gemini-api/docs)
-# - [Gemini API Prompting Strategies](https://ai.google.dev/gemini-api/docs/prompting-strategies)
-# - [Gemini API Models Overview](https://ai.google.dev/gemini-api/docs/models/gemini)
-# - [Gemini API Cookbook](https://github.com/google-gemini/cookbook)

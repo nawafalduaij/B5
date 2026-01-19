@@ -15,18 +15,17 @@
 #
 # Welcome to the Generative AI Course!
 #
-# In this tutorial, you will use the Gemini API's embedding endpoint to explore similarity scores.
+# In this tutorial, you will use the OpenAI API's embedding endpoint to explore similarity scores.
 #
 # **Prerequisites**:
-# - You need a Google Cloud Project with the Gemini API enabled.
-# - You need an API key stored in the `GOOGLE_API_KEY` environment variable.
+# - You need an OpenAI API key stored in the `OPENAI_API_KEY` environment variable.
 
 # %% [markdown]
 # ## Setup
 # First, we'll install the necessary libraries.
 #
 # ```bash
-# pip install -U -q "google-genai" pandas seaborn matplotlib
+# pip install -U -q "openai" pandas seaborn matplotlib
 # ```
 
 # %%
@@ -34,27 +33,26 @@ import os
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-from google import genai
-from google.genai import types
+from openai import OpenAI
 
 # %% [markdown]
 # ### Set up your API key
-# Ensure your `GOOGLE_API_KEY` is set in your environment variables.
+# Ensure your `OPENAI_API_KEY` is set in your environment variables.
 
 # %%
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
-if not GOOGLE_API_KEY:
-    raise ValueError("Please set the GOOGLE_API_KEY environment variable.")
+if not OPENAI_API_KEY:
+    raise ValueError("Please set the OPENAI_API_KEY environment variable.")
 
-client = genai.Client(api_key=GOOGLE_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # %% [markdown]
 # ## Calculate similarity scores
 #
 # This example embeds some variations on the pangram, `The quick brown fox jumps over the lazy dog`, including spelling mistakes and shortenings of the phrase. Another pangram and a somewhat unrelated phrase have been included for comparison.
 #
-# In this task, you are going to use the embeddings to calculate similarity scores, so the `task_type` for these embeddings is `semantic_similarity`.
+# OpenAI embeddings work well for calculating similarity scores between texts.
 
 # %%
 texts = [
@@ -70,10 +68,9 @@ texts = [
     'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vivamus et hendrerit massa. Sed pulvinar, nisi a lobortis sagittis, neque risus gravida dolor, in porta dui odio vel purus.',
 ]
 
-response = client.models.embed_content(
-    model='models/text-embedding-004',
-    contents=texts,
-    config=types.EmbedContentConfig(task_type='semantic_similarity')
+response = client.embeddings.create(
+    model='text-embedding-3-small',
+    input=texts
 )
 
 # %% [markdown]
@@ -98,7 +95,7 @@ truncated_texts = [truncate(t) for t in texts]
 
 # %%
 # Set up the embeddings in a dataframe.
-df = pd.DataFrame([e.values for e in response.embeddings], index=truncated_texts)
+df = pd.DataFrame([e.embedding for e in response.data], index=truncated_texts)
 
 # Perform the similarity calculation
 sim = df @ df.T
@@ -118,5 +115,5 @@ print(sim['The quick brown fox jumps over the lazy dog.'].sort_values(ascending=
 # %% [markdown]
 # ## Further reading
 #
-# * Explore [search re-ranking using embeddings](https://github.com/google-gemini/cookbook/blob/main/examples/Search_reranking_using_embeddings.ipynb) with the Wikipedia API
-# * Perform [anomaly detection using embeddings](https://github.com/google-gemini/cookbook/blob/main/examples/Anomaly_detection_with_embeddings.ipynb)
+# * Explore [OpenAI embeddings documentation](https://platform.openai.com/docs/guides/embeddings)
+# * Learn more about [similarity search with embeddings](https://platform.openai.com/docs/guides/embeddings/use-cases)
